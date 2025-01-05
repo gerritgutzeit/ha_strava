@@ -139,12 +139,12 @@ class StravaWebhookView(HomeAssistantView):
 
         if response.status == 429:
             _LOGGER.warning(f"Strava API rate limit has been reached")
-            return
+            return None, []
 
         if response.status != 200:
             text = await response.text()
             _LOGGER.error(f"Activities Fetch Failed: {response.status}: {text}")
-            return
+            return None, []
 
         config_entries = self.hass.config_entries.async_entries(domain=DOMAIN)
         auth = (
@@ -158,56 +158,63 @@ class StravaWebhookView(HomeAssistantView):
 
         athlete_id = None
         activities = []
-        for activity in await response.json():
-            athlete_id = int(activity["athlete"]["id"])
-            activity_id = int(activity["id"])
+        try:
+            for activity in await response.json():
+                athlete_id = int(activity["athlete"]["id"])
+                activity_id = int(activity["id"])
 
-            activity_response = await self.oauth_websession.async_request(
-                method="GET",
-                url=f"https://www.strava.com/api/v3/activities/{activity_id}",
-            )
+                activity_response = await self.oauth_websession.async_request(
+                    method="GET",
+                    url=f"https://www.strava.com/api/v3/activities/{activity_id}",
+                )
 
-            activity_dto = None
-            if activity_response:
-                if activity_response.status == 200:
-                    activity_dto = await activity_response.json()
-                    calories = int(activity_dto.get("calories", -1))
-                    if calories != -1:
-                        activity[CONF_SENSOR_CALORIES] = calories
-                    if activity_dto.get("gear"):
-                        activity["gear"] = activity_dto["gear"]
-                        activity["gear_id"] = activity_dto["gear"]["id"]
-                elif activity_response.status == 429:
-                    _LOGGER.warning(f"Strava API rate limit has been reached")
+                activity_dto = None
+                if activity_response:
+                    if activity_response.status == 200:
+                        activity_dto = await activity_response.json()
+                        # Add calories if available
+                        calories = int(activity_dto.get("calories", -1))
+                        if calories != -1:
+                            activity[CONF_SENSOR_CALORIES] = calories
+                        # Add gear information if available
+                        if activity_dto.get("gear"):
+                            activity["gear"] = activity_dto["gear"]
+                            activity["gear_id"] = activity_dto["gear"]["id"]
+                    elif activity_response.status == 429:
+                        _LOGGER.warning(f"Strava API rate limit has been reached")
+                    else:
+                        text = await activity_response.text()
+                        _LOGGER.error(
+                            f"Error getting activity by ID. Status: {activity_response.status}: {text}"
+                        )
                 else:
-                    text = await activity_response.text()
-                    _LOGGER.error(
-                        f"Error getting activity by ID. Status: {activity_response.status}: {text}"
-                    )
-            else:
-                _LOGGER.error(f"Failed to get activity by ID!")
+                    _LOGGER.error(f"Failed to get activity by ID!")
 
-            activities.append(
-                self._sensor_activity(
+                processed_activity = self._sensor_activity(
                     activity,
                     await self._geocode_activity(
                         activity=activity, activity_dto=activity_dto, auth=auth
                     ),
-                )  # noqa:E501
-            )
+                )
+                if processed_activity:
+                    activities.append(processed_activity)
 
-        _LOGGER.debug("Publishing activities event")
-        self.event_factory(
-            data={
-                "activities": sorted(
-                    activities,
-                    key=lambda activity: activity[CONF_SENSOR_DATE],
-                    reverse=True,
-                ),
-            },
-            event_type=EVENT_ACTIVITIES_UPDATE,
-        )
-        return athlete_id, activities
+            if activities:
+                _LOGGER.debug("Publishing activities event")
+                self.event_factory(
+                    data={
+                        "activities": sorted(
+                            activities,
+                            key=lambda activity: activity[CONF_SENSOR_DATE],
+                            reverse=True,
+                        ),
+                    },
+                    event_type=EVENT_ACTIVITIES_UPDATE,
+                )
+            return athlete_id, activities
+        except Exception as e:
+            _LOGGER.error(f"Error processing activities: {str(e)}")
+            return None, []
 
     async def _geocode_activity(
         self, activity: dict, activity_dto: dict, auth: str
@@ -345,47 +352,51 @@ class StravaWebhookView(HomeAssistantView):
             )
 
     def _sensor_activity(self, activity: dict, geocode: str) -> dict:
-        gear_id = activity.get("gear_id", None)
-        gear_name = activity.get("gear", {}).get("name", "Unknown Gear") if activity.get("gear") else "No Gear"
-        gear_distance = float(activity.get("gear", {}).get("distance", 0)) if activity.get("gear") else 0
-        
-        return {
-            CONF_SENSOR_ID: activity.get("id"),
-            CONF_SENSOR_TITLE: activity.get("name", "Strava Activity"),
-            CONF_SENSOR_CITY: geocode,
-            CONF_SENSOR_ACTIVITY_TYPE: activity.get("type", "Ride").lower(),
-            CONF_SENSOR_DISTANCE: float(activity.get("distance", -1)),
-            CONF_SENSOR_DATE: dt.strptime(
-                activity.get("start_date_local", "2000-01-01T00:00:00Z"),
-                "%Y-%m-%dT%H:%M:%SZ",
-            ),
-            CONF_SENSOR_ELAPSED_TIME: int(activity.get("elapsed_time", -1)),
-            CONF_SENSOR_MOVING_TIME: int(activity.get("moving_time", -1)),
-            CONF_SENSOR_KUDOS: int(activity.get("kudos_count", -1)),
-            CONF_SENSOR_CALORIES: int(
-                activity.get(
-                    CONF_SENSOR_CALORIES,
-                    activity.get("kilojoules", (-1 / FACTOR_KILOJOULES_TO_KILOCALORIES))
-                    * FACTOR_KILOJOULES_TO_KILOCALORIES,
-                )
-            ),
-            CONF_SENSOR_ELEVATION: int(activity.get("total_elevation_gain", -1)),
-            CONF_SENSOR_POWER: int(activity.get("average_watts", -1)),
-            CONF_SENSOR_TROPHIES: int(activity.get("achievement_count", -1)),
-            CONF_SENSOR_HEART_RATE_AVG: float(activity.get("average_heartrate", -1)),
-            CONF_SENSOR_HEART_RATE_MAX: float(activity.get("max_heartrate", -1)),
-            CONF_SENSOR_CADENCE_AVG: float(
-                activity.get("average_cadence", (-1 / 2)) * 2
-            ),
-            CONF_ATTR_START_LATLONG: activity.get("start_latlng"),
-            CONF_ATTR_END_LATLONG: activity.get("end_latlng"),
-            CONF_ATTR_SPORT_TYPE: activity.get("sport_type"),
-            CONF_ATTR_COMMUTE: activity.get("commute", False),
-            CONF_ATTR_PRIVATE: activity.get("private", False),
-            CONF_SENSOR_GEAR_ID: gear_id,
-            CONF_SENSOR_GEAR_NAME: gear_name,
-            CONF_SENSOR_GEAR_DISTANCE: gear_distance,
-        }
+        try:
+            gear_id = activity.get("gear_id", None)
+            gear_name = activity.get("gear", {}).get("name", "Unknown Gear") if activity.get("gear") else None
+            gear_distance = float(activity.get("gear", {}).get("distance", 0)) if activity.get("gear") else None
+            
+            return {
+                CONF_SENSOR_ID: activity.get("id"),
+                CONF_SENSOR_TITLE: activity.get("name", "Strava Activity"),
+                CONF_SENSOR_CITY: geocode,
+                CONF_SENSOR_ACTIVITY_TYPE: activity.get("type", "Ride").lower(),
+                CONF_SENSOR_DISTANCE: float(activity.get("distance", -1)),
+                CONF_SENSOR_DATE: dt.strptime(
+                    activity.get("start_date_local", "2000-01-01T00:00:00Z"),
+                    "%Y-%m-%dT%H:%M:%SZ",
+                ),
+                CONF_SENSOR_ELAPSED_TIME: int(activity.get("elapsed_time", -1)),
+                CONF_SENSOR_MOVING_TIME: int(activity.get("moving_time", -1)),
+                CONF_SENSOR_KUDOS: int(activity.get("kudos_count", -1)),
+                CONF_SENSOR_CALORIES: int(
+                    activity.get(
+                        CONF_SENSOR_CALORIES,
+                        activity.get("kilojoules", (-1 / FACTOR_KILOJOULES_TO_KILOCALORIES))
+                        * FACTOR_KILOJOULES_TO_KILOCALORIES,
+                    )
+                ),
+                CONF_SENSOR_ELEVATION: int(activity.get("total_elevation_gain", -1)),
+                CONF_SENSOR_POWER: int(activity.get("average_watts", -1)),
+                CONF_SENSOR_TROPHIES: int(activity.get("achievement_count", -1)),
+                CONF_SENSOR_HEART_RATE_AVG: float(activity.get("average_heartrate", -1)),
+                CONF_SENSOR_HEART_RATE_MAX: float(activity.get("max_heartrate", -1)),
+                CONF_SENSOR_CADENCE_AVG: float(
+                    activity.get("average_cadence", (-1 / 2)) * 2
+                ),
+                CONF_ATTR_START_LATLONG: activity.get("start_latlng"),
+                CONF_ATTR_END_LATLONG: activity.get("end_latlng"),
+                CONF_ATTR_SPORT_TYPE: activity.get("sport_type"),
+                CONF_ATTR_COMMUTE: activity.get("commute", False),
+                CONF_ATTR_PRIVATE: activity.get("private", False),
+                CONF_SENSOR_GEAR_ID: gear_id,
+                CONF_SENSOR_GEAR_NAME: gear_name,
+                CONF_SENSOR_GEAR_DISTANCE: gear_distance,
+            }
+        except Exception as e:
+            _LOGGER.error(f"Error processing activity data: {str(e)}")
+            return None
 
     def _sensor_summary_stats(self, summary_stats: dict) -> dict:
         athlete_id = str(summary_stats.get(CONF_SENSOR_ID, ""))
