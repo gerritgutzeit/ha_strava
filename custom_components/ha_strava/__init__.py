@@ -127,8 +127,23 @@ class StravaWebhookView(HomeAssistantView):
         """
         _LOGGER.debug("Fetching Data from Strava API")
         athlete_id, activities = await self._fetch_activities()
-        self.hass.async_create_task(self._fetch_summary_stats(athlete_id))
-        self.hass.async_create_task(self._fetch_images(activities))
+        
+        if athlete_id and activities:
+            _LOGGER.debug(f"Found {len(activities)} activities")
+            self.event_factory(
+                data={
+                    "activities": sorted(
+                        activities,
+                        key=lambda activity: activity[CONF_SENSOR_DATE],
+                        reverse=True,
+                    ),
+                },
+                event_type=EVENT_ACTIVITIES_UPDATE,
+            )
+            self.hass.async_create_task(self._fetch_summary_stats(athlete_id))
+            self.hass.async_create_task(self._fetch_images(activities))
+        else:
+            _LOGGER.warning("No activities or athlete_id found")
 
     async def _fetch_activities(self) -> Tuple[str, list[dict]]:
         _LOGGER.debug("Fetching activities")
@@ -159,18 +174,20 @@ class StravaWebhookView(HomeAssistantView):
         athlete_id = None
         activities = []
         try:
-            for activity in await response.json():
-                athlete_id = int(activity["athlete"]["id"])
-                activity_id = int(activity["id"])
+            response_data = await response.json()
+            _LOGGER.debug(f"Received {len(response_data)} activities from Strava")
+            
+            for activity in response_data:
+                try:
+                    athlete_id = int(activity["athlete"]["id"])
+                    activity_id = int(activity["id"])
 
-                activity_response = await self.oauth_websession.async_request(
-                    method="GET",
-                    url=f"https://www.strava.com/api/v3/activities/{activity_id}",
-                )
+                    activity_response = await self.oauth_websession.async_request(
+                        method="GET",
+                        url=f"https://www.strava.com/api/v3/activities/{activity_id}",
+                    )
 
-                activity_dto = None
-                if activity_response:
-                    if activity_response.status == 200:
+                    if activity_response and activity_response.status == 200:
                         activity_dto = await activity_response.json()
                         # Add calories if available
                         calories = int(activity_dto.get("calories", -1))
@@ -180,38 +197,34 @@ class StravaWebhookView(HomeAssistantView):
                         if activity_dto.get("gear"):
                             activity["gear"] = activity_dto["gear"]
                             activity["gear_id"] = activity_dto["gear"]["id"]
-                    elif activity_response.status == 429:
+                    elif activity_response and activity_response.status == 429:
                         _LOGGER.warning(f"Strava API rate limit has been reached")
-                    else:
+                        continue
+                    elif activity_response:
                         text = await activity_response.text()
                         _LOGGER.error(
                             f"Error getting activity by ID. Status: {activity_response.status}: {text}"
                         )
-                else:
-                    _LOGGER.error(f"Failed to get activity by ID!")
+                        continue
 
-                processed_activity = self._sensor_activity(
-                    activity,
-                    await self._geocode_activity(
-                        activity=activity, activity_dto=activity_dto, auth=auth
-                    ),
-                )
-                if processed_activity:
-                    activities.append(processed_activity)
+                    geocode = await self._geocode_activity(
+                        activity=activity, activity_dto=activity_dto if activity_response and activity_response.status == 200 else None, auth=auth
+                    )
+                    
+                    processed_activity = self._sensor_activity(activity, geocode)
+                    if processed_activity:
+                        activities.append(processed_activity)
+                        _LOGGER.debug(f"Processed activity {activity_id}")
+                    else:
+                        _LOGGER.warning(f"Failed to process activity {activity_id}")
+                
+                except Exception as e:
+                    _LOGGER.error(f"Error processing individual activity: {str(e)}")
+                    continue
 
-            if activities:
-                _LOGGER.debug("Publishing activities event")
-                self.event_factory(
-                    data={
-                        "activities": sorted(
-                            activities,
-                            key=lambda activity: activity[CONF_SENSOR_DATE],
-                            reverse=True,
-                        ),
-                    },
-                    event_type=EVENT_ACTIVITIES_UPDATE,
-                )
+            _LOGGER.debug(f"Successfully processed {len(activities)} activities")
             return athlete_id, activities
+            
         except Exception as e:
             _LOGGER.error(f"Error processing activities: {str(e)}")
             return None, []

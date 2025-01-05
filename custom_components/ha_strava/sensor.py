@@ -726,14 +726,18 @@ class StravaStatsSensor(SensorEntity):  # pylint: disable=missing-class-docstrin
     def strava_data_update_event_handler(self, event):
         """Handle Strava API data which is emitted from a Strava Update Event"""
         activities = event.data.get("activities", [])
+        if not activities:
+            _LOGGER.warning("No activities in update event")
+            return
+            
+        _LOGGER.debug(f"Received update event with {len(activities)} activities")
         if 0 <= self._activity_index < len(activities):
             self._data = activities[self._activity_index]
+            _LOGGER.debug(f"Updated activity {self._activity_index} data")
             self.schedule_update_ha_state()
         else:
-            _LOGGER.info(
-                "Invalid activity index: %s. Number of activities returned from Strava API: %s",
-                self._activity_index + 1,
-                len(activities),
+            _LOGGER.debug(
+                f"Activity index {self._activity_index} out of range. Available activities: {len(activities)}"
             )
 
     async def async_added_to_hass(self):
