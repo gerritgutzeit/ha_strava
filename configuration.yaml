@@ -1,0 +1,15 @@
+template:
+  - sensor:
+      - name: "Total Distance Bike"
+        unit_of_measurement: "km"
+        state_class: "total"
+        state: >
+          {% set total_distance = namespace(value=0) %}
+          {% for activity_number in range(10) %}
+            {% set gear_name = states('sensor.strava_' ~ activity_number ~ '_15') %}
+            {% if gear_name == 'Your Bike Name' %}
+              {% set distance = states('sensor.strava_' ~ activity_number ~ '_3') | float(0) %}
+              {% set total_distance.value = total_distance.value + distance %}
+            {% endif %}
+          {% endfor %}
+          {{ total_distance.value }} 
