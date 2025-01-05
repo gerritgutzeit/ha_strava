@@ -342,6 +342,10 @@ class StravaWebhookView(HomeAssistantView):
             )
 
     def _sensor_activity(self, activity: dict, geocode: str) -> dict:
+        gear_id = activity.get("gear_id", None)
+        gear_name = activity.get("gear", {}).get("name", "Unknown Gear") if activity.get("gear") else "No Gear"
+        gear_distance = float(activity.get("gear", {}).get("distance", 0)) if activity.get("gear") else 0
+        
         return {
             CONF_SENSOR_ID: activity.get("id"),
             CONF_SENSOR_TITLE: activity.get("name", "Strava Activity"),
@@ -375,6 +379,9 @@ class StravaWebhookView(HomeAssistantView):
             CONF_ATTR_SPORT_TYPE: activity.get("sport_type"),
             CONF_ATTR_COMMUTE: activity.get("commute", False),
             CONF_ATTR_PRIVATE: activity.get("private", False),
+            CONF_SENSOR_GEAR_ID: gear_id,
+            CONF_SENSOR_GEAR_NAME: gear_name,
+            CONF_SENSOR_GEAR_DISTANCE: gear_distance,
         }
 
     def _sensor_summary_stats(self, summary_stats: dict) -> dict:

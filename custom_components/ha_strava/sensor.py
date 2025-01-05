@@ -669,6 +669,11 @@ class StravaStatsSensor(SensorEntity):  # pylint: disable=missing-class-docstrin
                 attr[CONF_LONGITUDE] = float(
                     self._data[CONF_ATTR_START_LATLONG][1]
                 )  # noqa: E501
+            # Add gear information if available
+            if self._data.get(CONF_SENSOR_GEAR_ID):
+                attr[CONF_ATTR_GEAR_ID] = self._data[CONF_SENSOR_GEAR_ID]
+                attr[CONF_ATTR_GEAR_NAME] = self._data[CONF_SENSOR_GEAR_NAME]
+                attr[CONF_ATTR_GEAR_DISTANCE] = self._data[CONF_SENSOR_GEAR_DISTANCE]
             return attr
 
         self.set_distance_units()
@@ -690,7 +695,7 @@ class StravaStatsSensor(SensorEntity):  # pylint: disable=missing-class-docstrin
             attr[CONF_DEVICE_CLASS] = SensorDeviceClass.POWER
             return attr
 
-        if metric == CONF_SENSOR_DISTANCE:
+        if metric in [CONF_SENSOR_DISTANCE, CONF_SENSOR_GEAR_DISTANCE]:
             attr[CONF_DEVICE_CLASS] = SensorDeviceClass.DISTANCE
             return attr
 

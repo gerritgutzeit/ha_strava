@@ -65,6 +65,9 @@ CONF_SENSOR_HEART_RATE_AVG = "average_heartrate"
 CONF_SENSOR_HEART_RATE_MAX = "max_heartrate"
 CONF_SENSOR_BIGGEST_RIDE_DISTANCE = "biggest_ride_distance"
 CONF_SENSOR_BIGGEST_ELEVATION_GAIN = "biggest_climb_elevation_gain"
+CONF_SENSOR_GEAR_ID = "gear_id"
+CONF_SENSOR_GEAR_NAME = "gear_name"
+CONF_SENSOR_GEAR_DISTANCE = "gear_distance"
 
 CONF_ACTIVITY_TYPE_RUN = "run"
 CONF_ACTIVITY_TYPE_RIDE = "ride"
@@ -101,6 +104,9 @@ CONF_SENSORS = {
     CONF_SENSOR_TROPHIES: {"icon": "mdi:trophy"},
     CONF_SENSOR_HEART_RATE_AVG: {"icon": "mdi:heart-pulse"},
     CONF_SENSOR_HEART_RATE_MAX: {"icon": "mdi:heart-pulse"},
+    CONF_SENSOR_GEAR_ID: {"icon": "mdi:bike"},
+    CONF_SENSOR_GEAR_NAME: {"icon": "mdi:bike"},
+    CONF_SENSOR_GEAR_DISTANCE: {"icon": "mdi:bike-fast"},
 }
 FACTOR_METER_TO_MILE = 0.000621371
 FACTOR_METER_TO_FEET = 3.28084
@@ -120,6 +126,9 @@ CONF_SENSOR_10 = "sensor_10"
 CONF_SENSOR_11 = "sensor_11"
 CONF_SENSOR_12 = "sensor_12"
 CONF_SENSOR_13 = "sensor_13"
+CONF_SENSOR_14 = "sensor_14"
+CONF_SENSOR_15 = "sensor_15"
+CONF_SENSOR_16 = "sensor_16"
 
 CONF_SENSOR_DEFAULT = {
     "icon": "mdi:run",
@@ -136,6 +145,9 @@ CONF_SENSOR_DEFAULT = {
     CONF_SENSOR_11: CONF_SENSOR_TROPHIES,
     CONF_SENSOR_12: CONF_SENSOR_KUDOS,
     CONF_SENSOR_13: CONF_SENSOR_CADENCE_AVG,
+    CONF_SENSOR_14: CONF_SENSOR_GEAR_ID,
+    CONF_SENSOR_15: CONF_SENSOR_GEAR_NAME,
+    CONF_SENSOR_16: CONF_SENSOR_GEAR_DISTANCE,
 }
 
 DEVICE_CLASS_DURATION = "duration"
@@ -161,3 +173,7 @@ UNIT_STEPS_PER_MINUTE = "spm"
 
 GEOCODE_XYZ_THROTTLED = "Throttled! See geocode.xyz/pricing"
 UNKNOWN_AREA = None
+
+CONF_ATTR_GEAR_ID = "gear_id"
+CONF_ATTR_GEAR_NAME = "gear_name"
+CONF_ATTR_GEAR_DISTANCE = "gear_distance"
